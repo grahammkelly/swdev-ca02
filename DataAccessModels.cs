@@ -19,7 +19,7 @@ using System.Linq;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 
-namespace LMS {
+namespace LMS.Data {
 
     [Serializable]
     public class Course {
