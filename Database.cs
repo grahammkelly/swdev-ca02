@@ -38,6 +38,12 @@ namespace LMS.Data
 
     //Nothing outside this 'Database' file should be able to instantiate or access the FileBasedInMemoryDatabase directly.
     // the only thing directly accessing this class should be the Database Factory or tests.
+    //
+    // The file storage here will get time-consuming to store/load data as time goes on. Would better
+    // to use a _real_ (ish) database such as SQLite, LiteDB (https://github.com/litedb-org/litedb) or
+    // CSharpDB (https://csharpdb.com/), but those could be an alternative implementation of the `Database`
+    // interface.
+    //
      internal class FileBackedInMemoryDatabase : Database {
         public const string COURSE_FILE = "./courses.dat";  //Public to allow testing
         public const string SUBJECT_FILE = "./subjects.dat";  //Public to allow testing
@@ -45,7 +51,7 @@ namespace LMS.Data
         private readonly Dictionary<string, Course> _courses = new Dictionary<string, Course>();
         private readonly Dictionary<string, Subject> _subjects = new Dictionary<string, Subject>();
         
-        internal protected FileBackedInMemoryDatabase() {  //Not private as I want to be able to instantiate multiple Database instances in _tests_            
+        internal protected FileBackedInMemoryDatabase() {            
             LoadDataFromFile(COURSE_FILE, SUBJECT_FILE);
         }
 
