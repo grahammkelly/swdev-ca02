@@ -21,7 +21,10 @@ namespace LMS.Data
             return new TestDatabase();
         }
     }
-    public interface Database { //Initially only InMemoryDatabase, but allow for other Database types in the future
+    
+    //Initially only FileBackedInMemoryDatabase (and a test that disables sqving), but allow for
+    // other Database types in the future.
+    public interface Database { 
         List<Course> GetCourses();
         List<Subject> GetSubjects();
 
@@ -149,20 +152,28 @@ namespace LMS.Data
 
             private static Subject ExtractSubjectFromLine(string line) {
                 if (line.StartsWith("TestedSubject:")) {
-                    return ExtractTestedSubjectFromLine(line);
+                    Subject? s = ExtractTestedSubjectFromLine(line);
+                    if (s == null || s is not TestedSubject) {
+                        throw new InvalidDataException($"TestedSubject '{line}' is not a valid TestedSubject object.");
+                    }
+                    return s;
                 }
                 else if (line.StartsWith("ContinuousAssessmentSubject:")) {
-                    return ExtractContinuousAssessmentSubjectFromLine(line);
+                    Subject? s = ExtractContinuousAssessmentSubjectFromLine(line);
+                    if (s == null || s is not ContinuousAssessmentSubject) {
+                        throw new InvalidDataException($"ContinuousAssessmentSubject '{line}' is not a valid ContinuousAssessmentSubject object.");
+                    }
+                    return s;
                 }
                 throw new InvalidDataException($"Unknown subject type in line: {line}");
             }
 
-            private static TestedSubject ExtractTestedSubjectFromLine(string line) {
+            private static TestedSubject? ExtractTestedSubjectFromLine(string line) {
                 string json = line.Substring("TestedSubject:".Length).Trim();
                 return System.Text.Json.JsonSerializer.Deserialize<TestedSubject>(json);
             }
 
-            private static ContinuousAssessmentSubject ExtractContinuousAssessmentSubjectFromLine(string line) {
+            private static ContinuousAssessmentSubject? ExtractContinuousAssessmentSubjectFromLine(string line) {
                 string json = line.Substring("ContinuousAssessmentSubject:".Length).Trim();
                 return System.Text.Json.JsonSerializer.Deserialize<ContinuousAssessmentSubject>(json);
             }
@@ -208,6 +219,114 @@ namespace LMS.Data
 
         new public void Save() {
             throw new InvalidOperationException("Test database should not save data.");
+        }
+    }
+
+    public class DatabaseTester : Tester {
+
+        public static void PrepareDatabaseTests() {
+            Tester.AddModuleTester(new DatabaseTester());
+        }
+        private DatabaseTester() : base("Database and DatabaseAccessModels") {}
+
+        private Database GetDatabase() {
+            //Start from a clean slate!
+            EnsureFileDoesNotExist(FileBackedInMemoryDatabase.COURSE_FILE);
+            EnsureFileDoesNotExist(FileBackedInMemoryDatabase.SUBJECT_FILE);
+
+            //Test the Database classes
+            return DatabaseFactory.GetDatabase();
+        }
+
+        private void EnsureFileDoesNotExist(string filename) {
+            if (File.Exists(filename)) File.Delete(filename);
+        }
+
+        private TestedSubject CreateTestedSubject(string code) {
+            return new TestedSubject("Law", 5, "Introduction to Law", "Dr. Smith", code, 120);
+        }
+
+        private ContinuousAssessmentSubject CreateContinuousAssessmentSubject(string code) {
+            ContinuousAssessmentSubject s = new ContinuousAssessmentSubject("Programming", 5,
+                "Introduction to Programming", "Dr. Johnson", code);
+            s.SetAssignments(new List<Assignment>() {
+                new Assignment("Assignment 1", 50, "First Assignment"),
+                new Assignment("Assignment 2", 150, "Second Assignment")
+            });
+            return s;
+        }
+
+        protected override void ExecuteModuleTests() {
+            Database db = GetDatabase();    
+
+            //Create subjects to populate the DB with
+            TestedSubject law101 = CreateTestedSubject("LAW101");
+            ContinuousAssessmentSubject prog101 = CreateContinuousAssessmentSubject("PROG101");
+
+            //Check the balance was applied correctly
+            RunTest(string.Join(", ", prog101.Assignments.Select(a => $"{a.Weight}")) == "25, 75", 
+                "Assignments should have weight of 25/75");
+
+            db.AddSubject(law101);
+            RunTest(db.GetSubjects().Count == 1, "Only one subject should be stored in the DB");
+            RunTest(db.GetSubjectByCode(law101.Code) != null, "Subject LAW101 now exists");
+            RunTest(db.GetSubjectByCode(law101.Code) is TestedSubject, 
+                "Subject LAW101, stored to the DB, has the correct type");
+
+            db.AddSubject(prog101);
+            RunTest(db.GetSubjects().Count == 2, "Should now be 2 subjects on the DB");
+            RunTest(db.GetSubjectByCode(prog101.Code) != null, "PROG101 should now exist");
+            RunTest(db.GetSubjectByCode(prog101.Code) is ContinuousAssessmentSubject,
+                "Subject PROG101, stored to the DB, has the correct type");
+
+            Course newCourse = new Course("Computer Science", "Introduction to Computer Science", "CS101");
+            newCourse.AddSubjectByYear(1, prog101);
+            RunTest(newCourse.GetSubjectCodesForYear(1).Contains(prog101.Code), "Subject was added to the course correctly");
+
+            string subjCodeFromCourse = newCourse.GetSubjectCodesForYear(1).First();
+            Subject? subjFromCourse = db.GetSubjectByCode(subjCodeFromCourse);
+            RunTest(subjCodeFromCourse != null, "Subject from the DB is not null");
+            RunTest(subjFromCourse == prog101, "Subject from the code is the one expected");
+            RunTest(subjFromCourse is ContinuousAssessmentSubject, 
+                "Subject added to the course has the correct type");
+            RunTest(((ContinuousAssessmentSubject)subjFromCourse).Assignments.Count == prog101.Assignments.Count, 
+                "Subject added to the course has the correct number of assignments?");
+
+            //Added all these as I had a lot of trouble with serialization of the derived types
+            RunTest(subjFromCourse == db.GetSubjectByCode("PROG101"), 
+                "Subject added to the course should be the same as that on the database");
+
+            Subject? subjFromDB = db.GetSubjectByCode("PROG101");
+            RunTest(subjFromDB != null, "Subject retrieved from DB should not be null");
+            RunTest(subjFromDB.Equals(subjFromCourse), "Subject added to the course and DB are the same?");
+
+            db.AddCourse(newCourse);
+
+            db.Save();
+            RunTest(File.Exists(FileBackedInMemoryDatabase.COURSE_FILE), 
+                $"Database was saved, {FileBackedInMemoryDatabase.COURSE_FILE} should exist");
+            RunTest(File.Exists(FileBackedInMemoryDatabase.SUBJECT_FILE), 
+                $"Database was saved, {FileBackedInMemoryDatabase.SUBJECT_FILE} should exist");
+
+            Database testDB = DatabaseFactory.GetTestDatabaseInstance();
+            List<Course> storedCourses = db.GetCourses();
+            List<Course> loadedCourses = testDB.GetCourses();
+            RunTest(storedCourses.Count == loadedCourses.Count, "Loads the samenumber of courses as were stored");
+            List<string> loadedCourseCodes = new List<string>();
+            loadedCourses.ForEach(course => loadedCourseCodes.Add(course.Code));
+            foreach (Course course in storedCourses) {
+                RunTest(loadedCourseCodes.Contains(course.Code), $"Course '{course.Code}' was loaded from DB");
+            }
+
+            List<Subject> loadedSubjects = testDB.GetSubjects();
+            List<Subject> storedSubjects = db.GetSubjects();
+            RunTest(loadedSubjects.Count == storedSubjects.Count, 
+                "Same amount of subjects should be loaded as saved");
+            List<string> loadedSubjectCodes = loadedSubjects.Select(x => x.Code).ToList();
+            foreach (Subject subj in loadedSubjects) {
+                RunTest(loadedSubjectCodes.Contains(subj.Code), 
+                    $"Subject: {subj.Code} should be in the loaded subject list");
+            }
         }
     }
 }
