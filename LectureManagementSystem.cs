@@ -17,6 +17,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using LMS.Data;
 
 namespace LMS {
     public class LectureManagementSystem {

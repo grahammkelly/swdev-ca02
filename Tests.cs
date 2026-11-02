@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://gnu.org>.
 
-using LMS;
+using LMS.Data;
 
 void RunTest(bool passCondition, string testDesc) {
     Console.WriteLine($"Test: {testDesc} - {(passCondition ? "PASS" : "FAIL")}");  
@@ -82,6 +82,15 @@ RunTest(File.Exists(FileBackedInMemoryDatabase.SUBJECT_FILE),
     $"Database was saved, {FileBackedInMemoryDatabase.SUBJECT_FILE} should exist");
 
 Database testDB = DatabaseFactory.GetTestDatabaseInstance();
+List<Course> storedCourses = db.GetCourses();
+List<Course> loadedCourses = testDB.GetCourses();
+RunTest(storedCourses.Count == loadedCourses.Count, "Loads the samenumber of courses as were stored");
+List<string> loadedCourseCodes = new List<string>();
+loadedCourses.ForEach(course => loadedCourseCodes.Add(course.Code));
+foreach (Course course in storedCourses) {
+    RunTest(loadedCourseCodes.Contains(course.Code), $"Course '{course.Code}' was loaded from DB");
+}
+
 List<Subject> loadedSubjects = testDB.GetSubjects();
 List<Subject> storedSubjects = db.GetSubjects();
 RunTest(loadedSubjects.Count == storedSubjects.Count, 
