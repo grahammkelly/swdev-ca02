@@ -25,11 +25,11 @@ namespace LMS.Data
     //Initially only FileBackedInMemoryDatabase (and a test that disables sqving), but allow for
     // other Database types in the future.
     public interface Database { 
-        List<Course> GetCourses();
+        List<CourseDAO> GetCourses();
         List<Subject> GetSubjects();
 
-        Course? GetCourseByCode(string courseCode);
-        void AddCourse(Course course);
+        CourseDAO? GetCourseByCode(string courseCode);
+        void AddCourse(CourseDAO course);
         void RemoveCourse(string courseId);
 
         Subject? GetSubjectByCode(string subjectCode);
@@ -48,10 +48,11 @@ namespace LMS.Data
     // interface.
     //
      internal class FileBackedInMemoryDatabase : Database {
+        //According to Docs I can find, '/' should work for relative paths on BOTH Windows and Unix!
         public const string COURSE_FILE = "./courses.dat";  //Public to allow testing
         public const string SUBJECT_FILE = "./subjects.dat";  //Public to allow testing
 
-        private readonly Dictionary<string, Course> _courses = new Dictionary<string, Course>();
+        private readonly Dictionary<string, CourseDAO> _courses = new Dictionary<string, CourseDAO>();
         private readonly Dictionary<string, Subject> _subjects = new Dictionary<string, Subject>();
         
         internal protected FileBackedInMemoryDatabase() {            
@@ -71,12 +72,12 @@ namespace LMS.Data
             SubjectDataHandler.SaveSubjectsToFile(SUBJECT_FILE, _subjects.Values.ToList());
         }
 
-        public List<Course> GetCourses() => _courses.Values.ToList();   //This makes most sense to me but IntelliSense suggests `[.. _courses.Values]`
+        public List<CourseDAO> GetCourses() => _courses.Values.ToList();   //This makes most sense to me but IntelliSense suggests `[.. _courses.Values]`
 
-        public Course? GetCourseByCode(string courseCode) => 
+        public CourseDAO? GetCourseByCode(string courseCode) => 
                 _courses.ContainsKey(courseCode) ? _courses[courseCode] : null;
 
-        public void AddCourse(Course newCourse) {
+        public void AddCourse(CourseDAO newCourse) {
             if (_courses.ContainsKey(newCourse.Code)) {
                 throw new AlreadyExistsException($"Course with code {newCourse.Code} already exists.");
             }
@@ -183,7 +184,7 @@ namespace LMS.Data
             //Format of Courses on file will be in JSON format
             // So For example, a 'Course' will be '{"Title":"Computer Science","SubjectsByYear":{"1":{"Title":"Programming","Credits":5,"Description":"...","Lecturer":"...","Code":"PROG101","Assignments":[{"Title":"Assignment 1","Weight":50,"Description":"..."},{"Title":"Assignment 2","Weight":50,"Description":"..."}]}},"Description":"...","Code":"CS101"}'
 
-            public static void SaveCoursesToFile(string dataFile, List<Course> courses) {
+            public static void SaveCoursesToFile(string dataFile, List<CourseDAO> courses) {
                 //Prepare a list of the lines to write out
                 List<string> lines = courses.Select(course => System.Text.Json.JsonSerializer.Serialize(course)).ToList();
 
@@ -196,12 +197,12 @@ namespace LMS.Data
                 File.WriteAllLines(dataFile, lines);
             }
 
-            public static List<Course> LoadCoursesFromFile(string dataFile) {
-                List<Course> courses = new List<Course>();
+            public static List<CourseDAO> LoadCoursesFromFile(string dataFile) {
+                List<CourseDAO> courses = new List<CourseDAO>();
                 if (File.Exists(dataFile)) {
                     List<string> lines = File.ReadAllLines(dataFile).ToList();
                     lines.ForEach(line => {
-                        Course? c = System.Text.Json.JsonSerializer.Deserialize<Course>(line);
+                        CourseDAO? c = System.Text.Json.JsonSerializer.Deserialize<CourseDAO>(line);
                         if (c != null) {
                             courses.Add(c);
                         }
@@ -279,7 +280,7 @@ namespace LMS.Data
             RunTest(db.GetSubjectByCode(prog101.Code) is ContinuousAssessmentSubject,
                 "Subject PROG101, stored to the DB, has the correct type");
 
-            Course newCourse = new Course("Computer Science", "Introduction to Computer Science", "CS101");
+            CourseDAO newCourse = new CourseDAO("Computer Science", "Introduction to Computer Science", "CS101");
             newCourse.AddSubjectByYear(1, prog101);
             RunTest(newCourse.GetSubjectCodesForYear(1).Contains(prog101.Code), "Subject was added to the course correctly");
 
@@ -309,12 +310,12 @@ namespace LMS.Data
                 $"Database was saved, {FileBackedInMemoryDatabase.SUBJECT_FILE} should exist");
 
             Database testDB = DatabaseFactory.GetTestDatabaseInstance();
-            List<Course> storedCourses = db.GetCourses();
-            List<Course> loadedCourses = testDB.GetCourses();
+            List<CourseDAO> storedCourses = db.GetCourses();
+            List<CourseDAO> loadedCourses = testDB.GetCourses();
             RunTest(storedCourses.Count == loadedCourses.Count, "Loads the samenumber of courses as were stored");
             List<string> loadedCourseCodes = new List<string>();
             loadedCourses.ForEach(course => loadedCourseCodes.Add(course.Code));
-            foreach (Course course in storedCourses) {
+            foreach (CourseDAO course in storedCourses) {
                 RunTest(loadedCourseCodes.Contains(course.Code), $"Course '{course.Code}' was loaded from DB");
             }
 

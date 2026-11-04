@@ -22,7 +22,7 @@ using System.Threading.Tasks;
 namespace LMS.Data {
 
     [Serializable]
-    public class Course {
+    public class CourseDAO {
         public string Title { get; private set; }
         private Dictionary<long, List<string>> _subjectCodesByYear = new Dictionary<long, List<string>>();
 
@@ -33,14 +33,14 @@ namespace LMS.Data {
         public string Description { get; private set; }
         public string Code { get; private set; }
 
-        public Course(string title, string description, string code) {
+        public CourseDAO(string title, string description, string code) {
             Title = title;
             Description = description;
             Code = code;
         }
 
         [JsonConstructor]
-        public Course(string title, string description, string code, Dictionary<long, List<string>> subjectCodesByYear)
+        public CourseDAO(string title, string description, string code, Dictionary<long, List<string>> subjectCodesByYear)
                 : this(title, description, code) {
             _subjectCodesByYear = subjectCodesByYear;
         }

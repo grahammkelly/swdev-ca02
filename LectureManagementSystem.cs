@@ -23,7 +23,7 @@ namespace LMS {
     public class LectureManagementSystem {
         private const string DEFAULT_DATA_FILE = "./lms.dat";
 
-        private List<Course> _courses = new List<Course>();
+        private List<CourseDAO> _courses = new List<CourseDAO>();
 
         public static int Main(string[] args) {
             return 0;   //OK
