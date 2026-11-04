@@ -290,6 +290,10 @@ namespace LMS.Data
             RunTest(subjFromCourse == prog101, "Subject from the code is the one expected");
             RunTest(subjFromCourse is ContinuousAssessmentSubject, 
                 "Subject added to the course has the correct type");
+
+            //Next line shows as a potential 'Dereference of a possibly null reference' and 
+            // 'Converting null literal or possible null value to non-nullable type', however we have already checked 
+            // that subjFromCourse is not null in a previous test
             RunTest(((ContinuousAssessmentSubject)subjFromCourse).Assignments.Count == prog101.Assignments.Count, 
                 "Subject added to the course has the correct number of assignments?");
 
@@ -299,6 +303,9 @@ namespace LMS.Data
 
             Subject? subjFromDB = db.GetSubjectByCode("PROG101");
             RunTest(subjFromDB != null, "Subject retrieved from DB should not be null");
+
+            //Again, next line us showing as a potential 'Dereference of a possibly null reference', however (again) we 
+            // have already checked that subjFromDB is not null in the previous test
             RunTest(subjFromDB.Equals(subjFromCourse), "Subject added to the course and DB are the same?");
 
             db.AddCourse(newCourse);
