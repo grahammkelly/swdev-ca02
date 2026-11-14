@@ -57,6 +57,10 @@ public abstract class Logger {
         instance.Info($"[{instance}] initialized");
     }
 
+    public static void Log(LogLevel level, string message) {
+        GetLogger().WriteLog(level, message);
+    }
+
     public static Logger GetLogger() {
         if (instance == null) {
             instance = new ConsoleLogger();
@@ -67,34 +71,34 @@ public abstract class Logger {
 
     protected Logger() {}
 
-    protected abstract void AppendLog(string message);
+    protected abstract void AppendToLogStream(string message);
     
-    private void Log(LogLevel level, string message) {
+    private void WriteLog(LogLevel level, string message) {
         string timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.ffffZ");
-        AppendLog($"[{timestamp}]: [{level.ToString().ToUpper()}] - {message}");
+        AppendToLogStream($"[{timestamp}]: [{level.ToString().ToUpper()}] - {message}");
     }
 
     public void Info(string message) {
-        Log(LogLevel.Info, message);
+        WriteLog(LogLevel.Info, message);
     }
 
     public void Warning(string message) {
-        Log(LogLevel.Warning, message);
+        WriteLog(LogLevel.Warning, message);
     }
 
     public void Error(string message) {
-        Log(LogLevel.Error, message);
+        WriteLog(LogLevel.Error, message);
     }
 }
 
 class NoopLogger : Logger {
-    protected override void AppendLog(string message) {
+    protected override void AppendToLogStream(string message) {
         // Do nothing
     }
 }
 
 class ConsoleLogger : Logger {
-    protected override void AppendLog(string message) {
+    protected override void AppendToLogStream(string message) {
         Console.WriteLine(message);
     }
 }
@@ -104,7 +108,7 @@ class InMemoryLogger : Logger {
     private List<string> _logs = new List<string>();
     public List<string> Logs { get => _logs; }
 
-    protected override void AppendLog(string message) {
+    protected override void AppendToLogStream(string message) {
         // Store logs in memory (for testing purposes)
         _logs.Add(message);
     }
@@ -119,7 +123,7 @@ class FileLogger : Logger {
         this._logFile = logFile;
     }
 
-    protected override void AppendLog(string message) {
+    protected override void AppendToLogStream(string message) {
         System.IO.File.AppendAllText(_logFile, message + Environment.NewLine);
     }
 
