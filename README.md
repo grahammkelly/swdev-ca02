@@ -62,6 +62,20 @@ The solution must demonstrate:
     - Handling attempts to view, edit or delete a subject that does not exist.
     - Handling missing or invalid data files.
 
+## Meeting the requirements
+
+Demonstration of programming concepts;
+
+- Inheritance is demonstrated in the (very contrived) class hierarchy for lecture subjects, where there is a 
+`ContinuousAssessmentSubject` and a `TestedSubject` that both inherit from a common base `Subject` class.
+- Methods overrides are demonstrated in the `Database` interface and derived `FileBasedInMemoryDatabase` class (and 
+child of _that_, the `TestDatabase` class which overrides the 'Save' method to ensure test DBs cannot save their data).
+- Static fields and methods are demonstrated in the `DataFactory` and `DatastoreFactory` classes, which both use static 
+members to simulate a Singleton pattern. I also used static methods in helper classes in conversion between the DAO 
+and display data models
+
+Demonstration of meeting the usage requirements (must save data, must validate input, etc.) should be evident in usage of the application itself.
+
 # Project Overview
 
 ## Software requirements
