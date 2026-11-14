@@ -141,22 +141,23 @@ public class LoggingTester: Tester {
 
     protected override void ExecuteModuleTests() {
         Logger.InitializeLogger("MEMORY");
-        Logger logger = Logger.GetLogger() ?? new NoopLogger()
-        ; //Test against an InMemory Logger, if not initialized correctly, use NoopLogger to avoid null reference
+        Logger logger = Logger.GetLogger() ?? new NoopLogger(); //Test against an InMemory Logger, if not initialized correctly, use NoopLogger to avoid null reference
         RunTest(logger is InMemoryLogger, "GetLogger() returns correct type and did not fall back to NoOp logger");
         InMemoryLogger memLogger = (InMemoryLogger)logger;
 
         int numLogsBefore = memLogger.Logs.Count;
 
-        logger.Info("Test message");
-        RunTest(memLogger.Logs.Count == numLogsBefore + 1, "Log count increased as log written");
+        Logger.Log(LogLevel.Info, "Test message");
+        RunTest(memLogger.Logs.Count == numLogsBefore + 1, "Log count increased as log written through the static method");
         RunTest(memLogger.Logs.LastOrDefault("").Contains("[INFO]"), "Log added was at INFO level");
         RunTest(memLogger.Logs.LastOrDefault("").EndsWith("Test message"), "Log added contains the correct message");
+
+        numLogsBefore++;    //Incremented because of the last test
 
         logger.Warning("Test warning message");
         logger.Error("Test error message 1");
         logger.Error("Test error message 2");
-        RunTest(memLogger.Logs.Count == numLogsBefore + 4, "4 log events occurred");
+        RunTest(memLogger.Logs.Count == numLogsBefore + 3, "3 log events added when logged through the instantiated method");
         RunTest(memLogger.Logs.Count(log => log.Contains("[WARNING]")) == 1, "1 log event at WARNING level");
         RunTest(memLogger.Logs.Count(logEvent => logEvent.Contains("[ERROR]")) == 2, "2 log events at ERROR level");
     }
