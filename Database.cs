@@ -29,16 +29,18 @@ namespace LMS.Data
         List<Subject> GetSubjects();
 
         CourseDAO? GetCourseByCode(string courseCode);
-        void AddCourse(CourseDAO course);
+        void AddUpdateCourse(CourseDAO course);
         void RemoveCourse(string courseId);
 
         Subject? GetSubjectByCode(string subjectCode);
-        void AddSubject(Subject subject);
+        void AddUpdateSubject(Subject subject);
         void RemoveSubject(string subjectId);
 
         void Save();
     }
 
+    //I don't like 'internal', but want to restrict access to only this file.
+    //
     //Nothing outside this 'Database' file should be able to instantiate or access the FileBasedInMemoryDatabase directly.
     // the only thing directly accessing this class should be the Database Factory or tests.
     //
@@ -77,10 +79,7 @@ namespace LMS.Data
         public CourseDAO? GetCourseByCode(string courseCode) => 
                 _courses.ContainsKey(courseCode) ? _courses[courseCode] : null;
 
-        public void AddCourse(CourseDAO newCourse) {
-            if (_courses.ContainsKey(newCourse.Code)) {
-                throw new AlreadyExistsException($"Course with code {newCourse.Code} already exists.");
-            }
+        public void AddUpdateCourse(CourseDAO newCourse) {
             _courses[newCourse.Code] = newCourse;
         }
 
@@ -97,10 +96,7 @@ namespace LMS.Data
         public Subject? GetSubjectByCode(string subjectCode) => 
                 _subjects.ContainsKey(subjectCode) ? _subjects[subjectCode] : null;
 
-        public void AddSubject(Subject subject) {
-            if (_subjects.ContainsKey(subject.Code)) {
-                throw new AlreadyExistsException($"Subject with code {subject.Code} already exists.");
-            }
+        public void AddUpdateSubject(Subject subject) {
             _subjects[subject.Code] = subject;
         }
 
@@ -121,13 +117,13 @@ namespace LMS.Data
             public static void SaveSubjectsToFile(string dataFile, List<Subject> subjects) {
                 //Prepare a list of lines to write out
                 List<string> lines = new List<string>();
-                subjects.ForEach(subject => {
+                foreach (Subject subject in subjects) {
                     if(subject is TestedSubject) {
                         lines.Add($"{subject.GetClassType()}: {System.Text.Json.JsonSerializer.Serialize((TestedSubject)subject)}");
                     } else if(subject is ContinuousAssessmentSubject) {
                         lines.Add($"{subject.GetClassType()}: {System.Text.Json.JsonSerializer.Serialize((ContinuousAssessmentSubject)subject)}");
                     }
-                });
+                }
 
                 //Back up previous data
                 if (File.Exists(dataFile)) {
@@ -201,16 +197,21 @@ namespace LMS.Data
                 List<CourseDAO> courses = new List<CourseDAO>();
                 if (File.Exists(dataFile)) {
                     List<string> lines = File.ReadAllLines(dataFile).ToList();
-                    lines.ForEach(line => {
-                        CourseDAO? c = System.Text.Json.JsonSerializer.Deserialize<CourseDAO>(line);
-                        if (c != null) {
-                            courses.Add(c);
-                        }
-                    });
+                    courses = CreateCourseDAOForEachLine(lines);
                 }
                 return courses;
             }
-            
+
+            private static List<CourseDAO> CreateCourseDAOForEachLine(List<string> lines) {
+                List<CourseDAO> courses = new List<CourseDAO>();
+                foreach (string line in lines) {
+                    CourseDAO? c = System.Text.Json.JsonSerializer.Deserialize<CourseDAO>(line);
+                    if (c != null) {
+                        courses.Add(c);
+                    }
+                }
+                return courses;
+            }
         }
     }
 
@@ -268,13 +269,13 @@ namespace LMS.Data
             RunTest(string.Join(", ", prog101.Assignments.Select(a => $"{a.Weight}")) == "25, 75", 
                 "Assignments should have weight of 25/75");
 
-            db.AddSubject(law101);
+            db.AddUpdateSubject(law101);
             RunTest(db.GetSubjects().Count == 1, "Only one subject should be stored in the DB");
             RunTest(db.GetSubjectByCode(law101.Code) != null, "Subject LAW101 now exists");
             RunTest(db.GetSubjectByCode(law101.Code) is TestedSubject, 
                 "Subject LAW101, stored to the DB, has the correct type");
 
-            db.AddSubject(prog101);
+            db.AddUpdateSubject(prog101);
             RunTest(db.GetSubjects().Count == 2, "Should now be 2 subjects on the DB");
             RunTest(db.GetSubjectByCode(prog101.Code) != null, "PROG101 should now exist");
             RunTest(db.GetSubjectByCode(prog101.Code) is ContinuousAssessmentSubject,
@@ -308,7 +309,7 @@ namespace LMS.Data
             // have already checked that subjFromDB is not null in the previous test
             RunTest(subjFromDB.Equals(subjFromCourse), "Subject added to the course and DB are the same?");
 
-            db.AddCourse(newCourse);
+            db.AddUpdateCourse(newCourse);
 
             db.Save();
             RunTest(File.Exists(FileBackedInMemoryDatabase.COURSE_FILE), 
