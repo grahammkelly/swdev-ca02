@@ -15,7 +15,9 @@
 
 using LMS;
 using LMS.Data;
+using Logging;
 
 DatabaseTester.PrepareDatabaseTests();
+LoggingTester.PrepareLoggingTests();
 
 Tester.RunTestsForAllModules();
