@@ -65,6 +65,10 @@ namespace LMS.Data {
             return _subjectCodesByYear.ContainsKey(year) ? 
                     _subjectCodesByYear[year].AsReadOnly().ToList() : new List<string>();
         }
+
+        public override string ToString() {
+            return $"CourseDAO: {Code} - {Title}, Description: {Description}, Subjects By Year: [{string.Join(", ", _subjectCodesByYear.Select(kv => $"{kv.Key}: [{string.Join(", ", kv.Value)}]"))}]";
+        }
     }
 
     [Serializable]
@@ -86,6 +90,10 @@ namespace LMS.Data {
         public abstract string GetClassType();
 
         public abstract string GetSubjectAssessmentLocation();
+
+        public override string ToString() {
+            return $"{GetClassType()}: {Code} - {Title}, Description: {Description}, Lecturer: {Lecturer}, Credits: {Credits} ";
+        }
     }
 
     [Serializable]
@@ -101,6 +109,10 @@ namespace LMS.Data {
 
         public override string GetSubjectAssessmentLocation() {
             return "Exam Hall";
+        }
+
+        public override string ToString() {
+            return $"{base.ToString()}, Exam Duration: {ExamDuration}";
         }
     }
 
@@ -119,6 +131,10 @@ namespace LMS.Data {
 
         public ContinuousAssessmentSubject(string title, long credits, string description, string lecturer, string code) 
                 : base(title, credits, description, lecturer, code) {
+        }
+
+        public override string ToString() {
+            return $"{base.ToString()}, Assignments: [{string.Join(", ", _assignments)}]";
         }
 
         [JsonConstructor]
@@ -166,6 +182,10 @@ namespace LMS.Data {
             Title = title;
             Weight = weight;
             Description = description;
+        }
+
+        public override string ToString() {
+            return $"Assignment: {Title}, Weight: {Weight}, Description: {Description}";
         }
     }
 }
