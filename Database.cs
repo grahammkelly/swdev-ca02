@@ -36,22 +36,66 @@ namespace LMS.Data
             return new TestDatabase();
         }
     }
+
+    public interface ChangeNotificationReceiver {
+        public abstract void CoursesChanged();
+        public abstract void SubjectsChanged();
+    }
     
     //Initially only FileBackedInMemoryDatabase (and a test that disables sqving), but allow for
     // other Database types in the future.
-    public interface Database { 
-        List<CourseDAO> GetCourses();
-        List<Subject> GetSubjects();
+    public abstract class Database { 
+        public abstract List<CourseDAO> GetCourses();
+        public abstract List<Subject> GetSubjects();
 
-        CourseDAO? GetCourseByCode(string courseCode);
-        void AddUpdateCourse(CourseDAO course);
-        void RemoveCourse(string courseId);
+        private List<ChangeNotificationReceiver> _changeReceivers = new List<ChangeNotificationReceiver>();
 
-        Subject? GetSubjectByCode(string subjectCode);
-        void AddUpdateSubject(Subject subject);
-        void RemoveSubject(string subjectId);
+        public abstract CourseDAO? GetCourseByCode(string courseCode);
+        public void AddUpdateCourse(CourseDAO course) {
+            AddUpdateCourseInternal(course);
+            //Notify Listeners
+            _changeReceivers.ForEach(receiver => receiver.CoursesChanged());
+        }
+        protected abstract void AddUpdateCourseInternal(CourseDAO course);
 
-        void Save();
+        public void RemoveCourse(string courseId) {
+            RemoveCourseInternal(courseId);
+            _changeReceivers.ForEach(receiver => receiver.CoursesChanged());
+        }
+        protected abstract void RemoveCourseInternal(string courseId);
+
+        public abstract Subject? GetSubjectByCode(string subjectCode);
+
+        public void AddUpdateSubject(Subject subject) {
+            AddUpdateSubjectInternal(subject);
+            //Notify Listeners
+            _changeReceivers.ForEach(receiver => receiver.SubjectsChanged());
+        }
+
+        protected abstract void AddUpdateSubjectInternal(Subject subject);
+
+        public void RemoveSubject(string subjectId) {
+            RemoveSubjectInternal(subjectId);
+            _changeReceivers.ForEach(receiver => receiver.SubjectsChanged());
+        }
+
+        protected abstract void RemoveSubjectInternal(string subjectId);
+
+        public abstract void Save();
+
+        public void RemoveAllData() {
+            RemoveAllDataInternal();
+            _changeReceivers.ForEach(receiver => {
+                receiver.CoursesChanged();
+                receiver.SubjectsChanged();
+            });
+        }
+    
+        protected abstract void RemoveAllDataInternal();
+
+        public void RegisterForNotifications(ChangeNotificationReceiver receiver) {
+            _changeReceivers.Add(receiver);
+        }
     }
 
     //I don't like 'internal', but want to restrict access to only this file.
@@ -69,8 +113,8 @@ namespace LMS.Data
         public const string COURSE_FILE = "./courses.dat";  //Public to allow testing
         public const string SUBJECT_FILE = "./subjects.dat";  //Public to allow testing
 
-        private readonly Dictionary<string, CourseDAO> _courses = new Dictionary<string, CourseDAO>();
-        private readonly Dictionary<string, Subject> _subjects = new Dictionary<string, Subject>();
+        protected readonly Dictionary<string, CourseDAO> _courses = new Dictionary<string, CourseDAO>();
+        protected readonly Dictionary<string, Subject> _subjects = new Dictionary<string, Subject>();
         
         internal protected FileBackedInMemoryDatabase() {            
             LoadDataFromFile(COURSE_FILE, SUBJECT_FILE);
@@ -84,38 +128,42 @@ namespace LMS.Data
         }
 
 
-        public void Save() {
+        public override void Save() {
             CourseDataHandler.SaveCoursesToFile(COURSE_FILE, _courses.Values.ToList());
             SubjectDataHandler.SaveSubjectsToFile(SUBJECT_FILE, _subjects.Values.ToList());
         }
 
-        public List<CourseDAO> GetCourses() => _courses.Values.ToList();   //This makes most sense to me but IntelliSense suggests `[.. _courses.Values]`
+        protected override void RemoveAllDataInternal() {
+            throw new NotImplementedException("'RemoveAllData' is not implemented for the real database.");
+        }
 
-        public CourseDAO? GetCourseByCode(string courseCode) => 
+        public override List<CourseDAO> GetCourses() => _courses.Values.ToList();   //This makes most sense to me but IntelliSense suggests `[.. _courses.Values]`
+
+        public override CourseDAO? GetCourseByCode(string courseCode) => 
                 _courses.ContainsKey(courseCode) ? _courses[courseCode] : null;
 
-        public void AddUpdateCourse(CourseDAO newCourse) {
+        protected override void AddUpdateCourseInternal(CourseDAO newCourse) {
             _courses[newCourse.Code] = newCourse;
         }
 
-        public void RemoveCourse(string courseId) {
+        protected override void RemoveCourseInternal(string courseId) {
             if (!_courses.ContainsKey(courseId)) {
                 throw new NotFoundException($"Course with ID {courseId} not found.");
             }
             _courses.Remove(courseId);
         }
 
-        public List<Subject> GetSubjects() => _subjects.Values.ToList();
+        public override List<Subject> GetSubjects() => _subjects.Values.ToList();
 
 
-        public Subject? GetSubjectByCode(string subjectCode) => 
+        public override Subject? GetSubjectByCode(string subjectCode) => 
                 _subjects.ContainsKey(subjectCode) ? _subjects[subjectCode] : null;
 
-        public void AddUpdateSubject(Subject subject) {
+        protected override void AddUpdateSubjectInternal(Subject subject) {
             _subjects[subject.Code] = subject;
         }
 
-        public void RemoveSubject(string subjectId) {
+        protected override void RemoveSubjectInternal(string subjectId) {
             if (!_subjects.ContainsKey(subjectId)) {
                 throw new NotFoundException($"Subject with ID {subjectId} not found.");
             }
@@ -237,9 +285,47 @@ namespace LMS.Data
         new public void Save() {
             throw new InvalidOperationException("Test database should not save data.");
         }
+
+        protected override void RemoveAllDataInternal() {
+            
+            _courses.Clear();
+            _subjects.Clear();
+        }
     }
 
     public class DatabaseTester : Tester {
+        
+        class TestChangeReceiver : ChangeNotificationReceiver {
+            private Func<bool> _subjCallback = () => true;
+            private Func<bool> _courseCallback = () => true;
+            
+            public Func<bool> SubjCallback { get => _subjCallback; set => _subjCallback = value; }
+            public Func<bool> CourseCallback { get => _courseCallback; set => _courseCallback = value; }
+
+            public void CoursesChanged() {
+                _courseCallback?.Invoke();
+            }
+
+            public void SubjectsChanged() {
+                _subjCallback?.Invoke();
+            }
+        }
+
+        private class ChangeNotification {
+            public bool SubjectChanged { get; set; } = false;
+            public bool CourseChanged { get; set; } = false;
+
+            public void Reset() {
+                SubjectChanged = false;
+                CourseChanged = false;
+            }
+
+            public bool SubjectWasChanged() => SubjectChanged;
+            public bool CourseWasChanged() => CourseChanged;
+
+            public Func<bool> SubjectCallback => () => SubjectChanged = true;
+            public Func<bool> CourseCallback => () => CourseChanged = true;
+        }
 
         public static void PrepareDatabaseTests() {
             Tester.AddModuleTester(new DatabaseTester());
@@ -276,15 +362,27 @@ namespace LMS.Data
         protected override void ExecuteModuleTests() {
             Database db = GetDatabase();    
 
+            //The following setup will allow me to check if notifications are being received when data on the DB changes
+            TestChangeReceiver testReceiver = new TestChangeReceiver();
+            ChangeNotification changeNotification = new ChangeNotification();
+            testReceiver.SubjCallback = changeNotification.SubjectCallback;
+            testReceiver.CourseCallback = changeNotification.CourseCallback;
+            db.RegisterForNotifications(testReceiver);
+
             //Create subjects to populate the DB with
             TestedSubject law101 = CreateTestedSubject("LAW101");
             ContinuousAssessmentSubject prog101 = CreateContinuousAssessmentSubject("PROG101");
+            TestedSubject toBeDeleted = CreateTestedSubject("DELETE");
 
-            //Check the balance was applied correctly
+            //Check the weight was applied correctly
             RunTest(string.Join(", ", prog101.Assignments.Select(a => $"{a.Weight}")) == "25, 75", 
                 "Assignments should have weight of 25/75");
 
             db.AddUpdateSubject(law101);
+            RunTest(changeNotification.SubjectWasChanged(), 
+            "Notification should have been received for adding a subject LAW101");
+            RunTest(!changeNotification.CourseWasChanged(), 
+                    "Course notification should not have been received for adding a subject LAW101");
             RunTest(db.GetSubjects().Count == 1, "Only one subject should be stored in the DB");
             RunTest(db.GetSubjectByCode(law101.Code) != null, "Subject LAW101 now exists");
             RunTest(db.GetSubjectByCode(law101.Code) is TestedSubject, 
@@ -295,6 +393,20 @@ namespace LMS.Data
             RunTest(db.GetSubjectByCode(prog101.Code) != null, "PROG101 should now exist");
             RunTest(db.GetSubjectByCode(prog101.Code) is ContinuousAssessmentSubject,
                 "Subject PROG101, stored to the DB, has the correct type");
+
+            //Reset these so we can check for notifications again
+            changeNotification.Reset();
+
+            db.AddUpdateSubject(toBeDeleted);
+            RunTest(db.GetSubjects().Count == 3, "Should now be 3 subjects on the DB");
+            RunTest(db.GetSubjectByCode(toBeDeleted.Code) != null, "DELETE should now exist");
+            db.RemoveSubject(toBeDeleted.Code);
+            RunTest(db.GetSubjects().Count == 2, "Should now be 2 subjects on the DB after deletion");
+            RunTest(db.GetSubjectByCode(toBeDeleted.Code) == null, 
+                    "Subject DELETE should no longer exist in the DB after deletion");
+            RunTest(changeNotification.SubjectWasChanged(), "Subject notification should have been received for the subject deletion");
+            RunTest(!changeNotification.CourseWasChanged(), 
+                    "Course notification should not have been received for the subject deletion");
 
             CourseDAO newCourse = new CourseDAO("Computer Science", "Introduction to Computer Science", "CS101");
             newCourse.AddSubjectByYear(1, prog101);
@@ -324,7 +436,16 @@ namespace LMS.Data
             // have already checked that subjFromDB is not null in the previous test
             RunTest(subjFromDB.Equals(subjFromCourse), "Subject added to the course and DB are the same?");
 
+            //Again, reset these so we can check for notifications again. This time we'll check the course 
+            // notifications get received and subject ones don't.
+            changeNotification.Reset();
+
             db.AddUpdateCourse(newCourse);
+
+            RunTest(changeNotification.CourseChanged, 
+                    "Course notification should have been received for the course update");
+            RunTest(!changeNotification.SubjectChanged, 
+                    "Subject notification should not have been received for the course update");
 
             db.Save();
             RunTest(File.Exists(FileBackedInMemoryDatabase.COURSE_FILE), 
