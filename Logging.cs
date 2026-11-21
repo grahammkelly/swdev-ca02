@@ -24,8 +24,9 @@ using LMS;
 
 namespace Logging;
 
-//Only allowing 3 levels of logs for the LMS application
+//Only allowing 4 levels of logs for the LMS application
 public enum LogLevel {
+    Debug,
     Info,
     Warning,
     Error
@@ -35,9 +36,9 @@ public abstract class Logger {
 
     private static Logger? instance;
 
-    public static void InitializeLogger(string logTo) {        
+    public static void InitializeLogger(string logTo = "CONSOLE") {        
         if (instance != null) {
-            throw new InvalidOperationException("Logger has already been initialized");
+            instance.WriteLogEvent(LogLevel.Warning, $"Logger has already been initialized to {instance.GetType()}");
         }
 
         switch (logTo.ToUpper()) {
@@ -54,7 +55,7 @@ public abstract class Logger {
                 instance = new FileLogger(logTo);
                 break;
         }
-        instance.Info($"[{instance}] initialized");
+        instance.WriteLogEvent(LogLevel.Info, $"[{instance}] initialized");
     }
 
     public static void Log(LogLevel level, string message) {
@@ -64,7 +65,7 @@ public abstract class Logger {
     public static Logger GetLogger() {
         if (instance == null) {
             instance = new ConsoleLogger();
-            instance.Info($"Logger was not initialized. Defaulting to [{instance}]");
+            instance.WriteLogEvent(LogLevel.Info, $"Logger was not initialized. Defaulting to [{instance}]");
         }
         return instance;
     }
@@ -78,16 +79,20 @@ public abstract class Logger {
         AppendLogEvent($"[{timestamp}]: [{level.ToString().ToUpper()}] - {message}");
     }
 
-    public void Info(string message) {
-        WriteLogEvent(LogLevel.Info, message);
+    public static void Debug(string message) {
+        GetLogger().WriteLogEvent(LogLevel.Debug, message);
     }
 
-    public void Warning(string message) {
-        WriteLogEvent(LogLevel.Warning, message);
+    public static void Info(string message) {
+        GetLogger().WriteLogEvent(LogLevel.Info, message);
     }
 
-    public void Error(string message) {
-        WriteLogEvent(LogLevel.Error, message);
+    public static void Warning(string message) {
+        GetLogger().WriteLogEvent(LogLevel.Warning, message);
+    }
+
+    public static void Error(string message) {
+        GetLogger().WriteLogEvent(LogLevel.Error, message);
     }
 }
 
@@ -154,10 +159,10 @@ public class LoggingTester: Tester {
 
         numLogsBefore++;    //Incremented because of the last test
 
-        logger.Warning("Test warning message");
-        logger.Error("Test error message 1");
-        logger.Error("Test error message 2");
-        RunTest(memLogger.Logs.Count == numLogsBefore + 3, "3 log events added when logged through the instantiated method");
+        Logger.Warning("Test warning message");
+        Logger.Error("Test error message 1");
+        Logger.Error("Test error message 2");
+        RunTest(memLogger.Logs.Count == numLogsBefore + 3, "3 log events added");
         RunTest(memLogger.Logs.Count(log => log.Contains("[WARNING]")) == 1, "1 log event at WARNING level");
         RunTest(memLogger.Logs.Count(logEvent => logEvent.Contains("[ERROR]")) == 2, "2 log events at ERROR level");
     }
