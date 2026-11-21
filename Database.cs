@@ -18,6 +18,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using LMS;
+using Logging;
 
 namespace LMS.Data
 {
@@ -110,8 +111,8 @@ namespace LMS.Data
     //
      internal class FileBackedInMemoryDatabase : Database {
         //According to Docs I can find, '/' should work for relative paths on BOTH Windows and Unix!
-        public const string COURSE_FILE = "./courses.dat";  //Public to allow testing
-        public const string SUBJECT_FILE = "./subjects.dat";  //Public to allow testing
+        public const string COURSE_FILE = "./courses";  //Public to allow testing
+        public const string SUBJECT_FILE = "./subjects";  //Public to allow testing
 
         protected readonly Dictionary<string, CourseDAO> _courses = new Dictionary<string, CourseDAO>();
         protected readonly Dictionary<string, Subject> _subjects = new Dictionary<string, Subject>();
@@ -129,6 +130,7 @@ namespace LMS.Data
 
 
         public override void Save() {
+            Logger.Info("Saving to filesystem");
             CourseDataHandler.SaveCoursesToFile(COURSE_FILE, _courses.Values.ToList());
             SubjectDataHandler.SaveSubjectsToFile(SUBJECT_FILE, _subjects.Values.ToList());
         }
@@ -171,6 +173,22 @@ namespace LMS.Data
         }
 
 
+        protected static class DataHandlerHelpers {
+            public static void SaveToFile(string dataFilePathAndPrefix, List<string> lines) {
+                string targetFileName = dataFilePathAndPrefix + ".dat";
+                BackupIfExists(dataFilePathAndPrefix);
+                File.WriteAllLines(targetFileName, lines);
+            }
+
+            private static void BackupIfExists(string dataFilePathAndPrefix) {
+                string targetFileName = dataFilePathAndPrefix + ".dat";
+                string backupFileName = $"{dataFilePathAndPrefix}_{DateTime.UtcNow:yyyyMMddTHHmmss.ffff}.bkp";
+                if (File.Exists(targetFileName)) {
+                    File.Move(targetFileName, backupFileName);
+                }
+            }
+        }
+
         private static class SubjectDataHandler {
             // Line format on the file will be 'Type: {fields in JSON format}'
             // So For example, a 'TestedSubject' will be 'TestedSubject: {"Title":"Law","Credits":5,"Description":"...","Lecturer":"...","Code":"LAW101","ExamDuration":120}'
@@ -179,6 +197,15 @@ namespace LMS.Data
 
             public static void SaveSubjectsToFile(string dataFile, List<Subject> subjects) {
                 //Prepare a list of lines to write out
+                List<string> lines = ConvertSubjectsToWritabelLines(subjects);
+                
+                Logger.Debug($"Saving Subjects:");
+                lines.ForEach(l => Logger.Debug($"\t{l}"));
+
+                DataHandlerHelpers.SaveToFile(dataFile, lines);
+            }
+
+            private static List<string> ConvertSubjectsToWritabelLines(List<Subject> subjects) {
                 List<string> lines = new List<string>();
                 foreach (Subject subject in subjects) {
                     if(subject is TestedSubject) {
@@ -187,14 +214,7 @@ namespace LMS.Data
                         lines.Add($"{subject.GetClassType()}: {System.Text.Json.JsonSerializer.Serialize((ContinuousAssessmentSubject)subject)}");
                     }
                 }
-
-                //Back up previous data
-                if (File.Exists(dataFile)) {
-                    File.Move(dataFile, $"{dataFile}.bak_{DateTime.UtcNow:yyyyMMddTHHmmss.ffff}");
-                }
-
-                //Now save the data
-                File.WriteAllLines(dataFile, lines);
+                return lines;
             }
 
             public static List<Subject> LoadSubjectsFromFile(string dataFile) {
@@ -246,20 +266,16 @@ namespace LMS.Data
             public static void SaveCoursesToFile(string dataFile, List<CourseDAO> courses) {
                 //Prepare a list of the lines to write out
                 List<string> lines = courses.Select(course => System.Text.Json.JsonSerializer.Serialize(course)).ToList();
+                Logger.Debug($"Saving Courses:");
+                lines.ForEach(l => Logger.Debug($"\t{l}"));
 
-                //First back up the old data files (if they exist)
-                if (File.Exists(dataFile)) {
-                    File.Move(dataFile, $"{dataFile}.bak_{DateTime.UtcNow:yyyyMMddTHHmmss.ffff}");
-                }
-
-                //Now save the data
-                File.WriteAllLines(dataFile, lines);
+                DataHandlerHelpers.SaveToFile(dataFile, lines);
             }
 
             public static List<CourseDAO> LoadCoursesFromFile(string dataFile) {
                 List<CourseDAO> courses = new List<CourseDAO>();
                 if (File.Exists(dataFile)) {
-                    List<string> lines = File.ReadAllLines(dataFile).ToList();
+                    List<string> lines = File.ReadAllLines(dataFile + ".dat").ToList();
                     courses = CreateCourseDAOForEachLine(lines);
                 }
                 return courses;
