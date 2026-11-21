@@ -6,6 +6,8 @@
     <RootNamespace>LMS</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- Comment this out to run 'dotnet run \-\- RunTests.cs' -->
+    <StartUpObject>LMS.LectureManagementSystem</StartUpObject>
   </PropertyGroup>
 
 </Project>
