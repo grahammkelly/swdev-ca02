@@ -80,8 +80,8 @@ public abstract class UI {
     //Helper methods (static as they do not access any internal state of the class)
     protected void BlankLine() => Console.WriteLine("");
 
-    protected static void ClearToEndOfLineFrom(int lineNum, int columnNum) {
-        Console.SetCursorPosition(columnNum, lineNum);
+    protected static void ClearToEndOfLineFrom(int columnNum, int lineNum = -1) {
+        Console.SetCursorPosition(columnNum, (lineNum==-1 ? Console.CursorTop : lineNum));
         ClearToEndOfCurrentLine();
     }
     
@@ -123,17 +123,17 @@ public abstract class UI {
         Console.SetCursorPosition(0, currentLine);
     }
 
-    protected ConsoleKey NavigateLines(int selectableLines, List<int> skipLines, ref int currentLine) {
+    protected ConsoleKey NavigateLines(int topLine, int selectableLines, List<int> skipLines, ref int currentLine) {
         ConsoleKey key;
         while (true) {
             DisplayAtLine(currentLine, ">");
             key = GetEditKey();
-            Logger.Debug($"Edit key pressed: {key}, line before action: {currentLine}, Lines displayed: {selectableLines} , Skip lines: [ {string.Join(",", skipLines)} ]");
+            Logger.Trace($"Edit key pressed: {key}, line before action: {currentLine}, Lines displayed: {selectableLines} , Skip lines: [ {string.Join(",", skipLines)} ]");
             switch (key) {
                 case ConsoleKey.UpArrow:
                     ClearUIErrorFromConsole();
                     DisplayAtLine(currentLine, " ");
-                    if (currentLine == 1) { //Top line is ALWAYS unselectable
+                    if (currentLine == topLine) { 
                         WriteUIErrorToConsole("Already at the top selectable line");
                     } else {
                         currentLine --;
@@ -143,7 +143,7 @@ public abstract class UI {
                 case ConsoleKey.DownArrow:
                     ClearUIErrorFromConsole();
                     DisplayAtLine(currentLine, " ");
-                    if (currentLine == selectableLines) {
+                    if (currentLine == selectableLines-1) {
                         WriteUIErrorToConsole("Already on the last selectable line");
                     } else {
                         currentLine++;
@@ -158,13 +158,18 @@ public abstract class UI {
         return ConsoleKey.Insert;   //Key does nothing, just to satisfy the compiler
     }
 
-    private ConsoleKey GetEditKey() {
-        ConsoleKey[] allowedKeys = { ConsoleKey.UpArrow, ConsoleKey.DownArrow, ConsoleKey.Enter, ConsoleKey.Escape, 
+    protected virtual ConsoleKey[] GetAllowedKeys() =>
+        new ConsoleKey[] { ConsoleKey.UpArrow, ConsoleKey.DownArrow, ConsoleKey.Enter, ConsoleKey.Escape, 
                 ConsoleKey.Delete, ConsoleKey.Backspace, ConsoleKey.Add };
+
+    protected virtual string GetInvalidKeyMessage() =>
+        "Invalid key. Please use Up, Down, Enter, '+', Delete, or Escape (to exit).";
+
+    private ConsoleKey GetEditKey() {
         ConsoleKeyInfo keyInfo = Console.ReadKey(true);
         ClearUIErrorFromConsole();
-        if (! (allowedKeys.Contains(keyInfo.Key))) {
-            WriteUIErrorToConsole("Invalid key. Please use Up, Down, Enter, '+', or Delete (Escape to exit).");
+        if (! (GetAllowedKeys().Contains(keyInfo.Key))) {
+            WriteUIErrorToConsole(GetInvalidKeyMessage());
             keyInfo = Console.ReadKey(true);
         }
         return keyInfo.Key;

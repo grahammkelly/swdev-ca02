@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://gnu.org>.
 
+using System.Runtime.InteropServices.Marshalling;
 using LMS.Data;
 using LMS.DisplayDataModels;
 using Logging;
@@ -74,11 +75,12 @@ public class CourseUI : UI {
 
     protected override void DisplayChildMenu() {
         Console.WriteLine("Course Menu:");
+        Console.WriteLine("A - Add a course");
         Console.WriteLine("S - Select a course (enter course code)");
     }
 
     protected override List<char> ValidSelectionsExcludingQuit() {
-        return new List<char> { 'S' }; // Add valid selections for the course menu
+        return new List<char> { 'A', 'S' }; // Add valid selections for the course menu
     }
 
     protected override bool HandleValidSelectionExcludingQuit(char choice) {
@@ -88,6 +90,13 @@ public class CourseUI : UI {
                 //Allow the use to 
                 CourseSelectionUI();
 
+                break;
+            case 'A':
+                Course? c = AddNewCourse();
+                if (c != null) {
+                    _db.AddUpdateCourse(c);
+                    Logger.Info($"Added course - {c}");
+                }
                 break;
             default:
                 Console.WriteLine("Invalid selection.");
@@ -103,6 +112,11 @@ public class CourseUI : UI {
         }
     }
 
+    private Course? AddNewCourse() {
+        Course? newCourse = new CourseDetailsUI(_db, Course.EmptyCourse()).AddCourse();
+        return newCourse;
+    }
+
     private Course? GetCourseToDisplay() {
         Course? selectedCourse = null;
         while (selectedCourse == null) {
@@ -112,7 +126,7 @@ public class CourseUI : UI {
                 Console.WriteLine("Course code cannot be empty.");
                 return null;
             } 
-            selectedCourse = GetSelectedCourse(code);
+            selectedCourse = GetSelectedCourse(code.ToUpper());
             if (selectedCourse != null) {
                 return selectedCourse;
             }
@@ -151,6 +165,11 @@ public class CourseDetailsUI : UI {
         Console.WriteLine("R - Remove this course");
     }
 
+    public Course? AddCourse() {
+        EditCourseDetails(true);
+        return _course;
+    }
+
     protected override List<char> ValidSelectionsExcludingQuit() {
         return new List<char> { 'E', 'R' };
     }
@@ -186,14 +205,13 @@ public class CourseDetailsUI : UI {
                 lineCount++;
                 
                 foreach (Subject subject in _course.SubjectsByYear[year]) {
-                    if (forEdit) {
-                        Console.WriteLine($"              {subject.Code, 15} - {TruncateTo(Console.WindowWidth - 16, subject.Title)}");  //We need _exact_ spacing at start of the line for edit!
-                    } else {
-                        Console.WriteLine($"              {subject.Code, 15} - {subject}");
-                    }
+                    Console.WriteLine($"              {subject.Code, -15} - {TruncateTo(Console.WindowWidth - 16, subject.Title)}");  //We need _exact_ spacing at start of the line for edit!
                     lineCount++;
                 }
             }
+            //3 Blank lines
+            BlankLine();
+            BlankLine();
             BlankLine();
         } else {
             Console.WriteLine("Course not found.");
@@ -201,30 +219,59 @@ public class CourseDetailsUI : UI {
         return lineCount;
     }
 
+    protected override ConsoleKey[] GetAllowedKeys() =>
+        new ConsoleKey[] { ConsoleKey.UpArrow, ConsoleKey.DownArrow, ConsoleKey.Enter, ConsoleKey.Escape, 
+                ConsoleKey.Delete, ConsoleKey.Backspace, ConsoleKey.Add, ConsoleKey.Spacebar };
+
+    protected virtual string GetInvalidKeyMessage() =>
+        "Invalid key. Please use Up, Down, Enter, '+', Delete, Spacebar (to save) or Escape (to exit).";
+
+
+    private int DisplayCourseForEditing(bool newCourse, out List<int> skipLines) {
+        int linesDisplayed = DisplayCourseDetails(true, out skipLines);
+        if (newCourse) {
+            Console.WriteLine($"\nPress 'Enter' to edit the current line, 'up' or 'down' to navigate. (Space to save and exit or Escape to abandon and exit)");
+        } else {
+            Console.WriteLine($"\nPress 'Enter' to edit the current line, 'up' or 'down' to navigate. (Escape to save and exit).");    
+        }
+        
+        Console.WriteLine("For Addition or removal of subjects, press '+' or Delete (on the subject line) respectively");
+        SetErrorLineNumber(linesDisplayed + 6); //Set the errors to display below the course detials and the instructions
+        // The '6' above is pretty arbitrary, to give me some empty space between the end of the course details and 
+        // the error details.
+        return linesDisplayed;
+    }
+
     //This method will depend heavily on the 'DisplayCourseDetails' method as the lines will need to be the _exact_ same
     // We will allow the course to display, then clear the current line, allowing test entry
-    private void EditCourseDetails() {
+    private Course? EditCourseDetails(bool newCourse = false) {
         List<int> skipLines;
-        int linesDisplayed = DisplayCourseDetails(true, out skipLines);
+        int linesDisplayed = DisplayCourseForEditing(newCourse, out skipLines);
 
-        Console.WriteLine("\nPress 'Enter' to edit the current line, 'up' or 'down' to navigate. (Escape to exit).");
-        Console.WriteLine("For Addition or removal of subjects, press '+' or Delete respectively");
-        SetErrorLineNumber(linesDisplayed + 4); //Set the errors to display below the course detials and the instructions
-
-        int currentLineToEdit = 1;  //We will NOT allow the code to be editted
+        int topLine = (newCourse ? 0 : 1);
+        int currentLineToEdit = topLine;  //We will NOT allow the code to be editted
         while (currentLineToEdit < linesDisplayed) {
-            var key = NavigateLines(linesDisplayed, skipLines, ref currentLineToEdit);
+            var key = NavigateLines(topLine, linesDisplayed, skipLines, ref currentLineToEdit);
             switch (key) {  //Only need to handle the 'special' cases (i.e. cases specific to course details)
                 case ConsoleKey.Enter:
                     //Edit the current line
-                    _db.AddUpdateCourse(EditCourseLine(currentLineToEdit, skipLines));        
+                    Course editedCourse = EditCourseLine(currentLineToEdit, skipLines);
+                    if (!newCourse) _db.AddUpdateCourse(editedCourse);
                     Logger.Debug($"Editted course line {currentLineToEdit}. Course details are now {_course}");           
                     break;
+                case ConsoleKey.Spacebar:
+                    //For now - save the course and exit
+                    if (_course.Code == null || _course.Code.Trim() == "") {
+                        WriteUIErrorToConsole("Cannot save a course with no course code.");
+                        break;
+                    }
+                    _db.AddUpdateCourse(_course);
+                    return _course;
                 case ConsoleKey.Escape:
-                    return; //Exit this UI element (the editing)
+                    return null; //Exit this UI element (the editing)
                 case ConsoleKey.Delete:
                 case ConsoleKey.Backspace:
-                    if (!IsSubjectLineSelected(currentLineToEdit)) {
+                    if (!IsSubjectLineSelected(currentLineToEdit, skipLines)) {
                         WriteUIErrorToConsole("Operation is only alloweed on subject lines");
                         break;
                     }
@@ -232,19 +279,81 @@ public class CourseDetailsUI : UI {
                     WriteUIErrorToConsole("Removing a subject not implemented yet.");
                     break;
                 case ConsoleKey.Add:
-                    if (!IsSubjectLineSelected(currentLineToEdit)) {
-                        WriteUIErrorToConsole("Operation is only alloweed on subject lines");
-                        break;
-                    }
                     //Add a subject
-                    WriteUIErrorToConsole("Adding a subject not implemented yet.");
+                    bool added = AddSubjectToCourse(linesDisplayed+1);
+                    linesDisplayed = DisplayCourseForEditing(newCourse, out skipLines);
                     break;
             }
-        }        
+        }   
+        return _course;     
     }
 
-    private bool IsSubjectLineSelected(int lineNum) {
-        return lineNum > 3;
+    private bool AddSubjectToCourse(int subjEntryLine) {
+        bool added = false;
+        Subject? subject = null;
+        int yr = GetSubjectYear(subjEntryLine);
+        if (yr > 0) {
+            subject = GetSubjectToAdd(subjEntryLine+1);
+            Logger.Debug($"Attempting to add subject {(subject?.Code ?? "null")} for year {yr}");
+        }
+        if (subject != null) {  //No need to check year as subject can only be non-empty if year was valid
+            //Check if the subject exists for this year on the course (we will allow the same subject to be added on multiple years but NOT multiple times on the same year!)
+            if (_course.SubjectsByYear.ContainsKey(yr) && _course.SubjectsByYear[yr].Contains(subject)) {
+                WriteUIErrorToConsole($"Subject {subject.Code} is already on the list for year {yr}.");
+            } else {
+                if (!_course.SubjectsByYear.ContainsKey(yr)) {
+                    _course.SubjectsByYear[yr] = new List<Subject>();
+                }
+                _course.SubjectsByYear[yr].Add(subject);
+                Logger.Debug($"Added subject. Course is now - {_course}");
+                added = true;
+            }
+        }
+        return added;
+    }
+
+    private int GetSubjectYear(int subjEntryLine) {
+        int yr = 0;
+        while (yr == 0) {
+            Console.SetCursorPosition(0, subjEntryLine);
+            Console.Write("Adding a subject for the course. What year of the course? ");
+            ConsoleKeyInfo key = Console.ReadKey();
+            switch (key.Key) {
+                case ConsoleKey.Escape:
+                    yr = -1; // Indicate escape pressed
+                    break;
+                default:
+                    yr = key.KeyChar - '0';
+                    if (yr == 0) {
+                        WriteUIErrorToConsole("Year cannot be 0.");
+                        yr = 0;
+                    } else if (yr > 9) {
+                        WriteUIErrorToConsole("Invalid course year. Must enter a year between 1 and 9 (inclusive).");
+                        yr = 0;
+                    }
+                    break;
+            }
+        }
+        return yr;
+    }
+
+    private Subject? GetSubjectToAdd(int subjEntryLine) {
+        string? code = null;
+        while (code == null) {
+            Console.SetCursorPosition(0, subjEntryLine);
+            Console.Write("Enter the subject code: ");
+            code = Console.ReadLine().ToUpper();
+            if (code != "" && !_db.Subjects.ContainsKey(code)) {
+                WriteUIErrorToConsole($"Subject {code} does not exist in the database.");
+                code = null; // Reset code to prompt again
+                ClearToEndOfLineFrom(24, subjEntryLine);   //Clear out the incorrect code!
+            }
+        }
+        return string.IsNullOrEmpty(code.Trim()) ? null : _db.Subjects[code];  //We know this will always be non-null due to the 'ContainsKey'check above
+    }
+
+    private bool IsSubjectLineSelected(int lineNum, List<int> skipLines) {
+        return (skipLines.Count > 0 && lineNum >= skipLines[0]);
     }
 
     private Course EditCourseLine(int lineNum, List<int> skipLines) {
@@ -255,8 +364,9 @@ public class CourseDetailsUI : UI {
             
         }
             
-        Console.SetCursorPosition(22, lineNum); //Magic number, 22 is the column the field contents starts displaying from
-        ClearToEndOfCurrentLine();
+        //Console.SetCursorPosition(22, lineNum); //Magic number, 22 is the column the field contents starts displaying from
+        //ClearToEndOfCurrentLine();
+        ClearToEndOfLineFrom(22, lineNum);
 
         //Research on StackOverflow and in MS documentation does not show any way to pre-seed the 
         // current field contents into the STDIN buffer so the user needs to re-enter the entire 
@@ -270,9 +380,16 @@ public class CourseDetailsUI : UI {
         //Very blunt way to specify the field to update based on the line number
         switch (lineNum) {  //Remember, the line numbers are 0 based
             case 0: // The Code (not available for 'edit' but will be for addition)
+                newContent = newContent.ToUpper();  //Make sure the code is always upper case
                 //Check the course code does not already exist (as we're adding the course!)
-                Logger.Debug($"Setting the course code to {newContent}");
-                _course.Code = newContent;
+                if (_db.Courses.ContainsKey(newContent)) {
+                    WriteUIErrorToConsole($"A course with code '{newContent}' already exists.");
+                    ClearToEndOfLineFrom(22, lineNum);   //Clear out the incorrect code!
+                    Logger.Warning($"A course with code {newContent} already exists, not storing this code");
+                } else {
+                    Logger.Debug($"Setting the course code to {newContent}");
+                    _course.Code = newContent;
+                }
                 break;
             case 1: //Title line
                 Logger.Debug($"Setting the course title to {newContent}");
