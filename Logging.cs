@@ -23,8 +23,8 @@ using LMS;
 
 namespace Logging;
 
-//Only allowing 4 levels of logs for the LMS application
 public enum LogLevel {
+    Trace,
     Debug,
     Info,
     Warning,
@@ -94,6 +94,10 @@ public abstract class Logger {
         }
         string timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.ffffZ");
         AppendLogEvent($"[{timestamp}]: [{level.ToString().ToUpper()}] - {message}");
+    }
+
+    public static void Trace(string message) {
+        GetLogger().WriteLogEvent(LogLevel.Trace, message);
     }
 
     public static void Debug(string message) {
