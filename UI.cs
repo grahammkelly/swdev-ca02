@@ -62,7 +62,7 @@ public abstract class UI {
 
     protected abstract void DisplayChildMenu();
 
-    protected abstract string ValidSelectionsExcludingQuit();
+    protected abstract List<char> ValidSelectionsExcludingQuit();
 
     protected bool HandleMenuSelection(char choice) {
         //Assume the selection, if it gets here, is a valid choice as it doesn't get out of 'DisplayMenuAndGetSelection otherwise
@@ -185,8 +185,8 @@ public class LMSMainMenuUI : UI {
         Console.WriteLine("S - Subject UI");
     }
 
-    protected override string ValidSelectionsExcludingQuit() {
-        return "CS";
+    protected override List<char> ValidSelectionsExcludingQuit() {
+        return new List<char> { 'C', 'S' };
     }
 
     protected override bool HandleValidSelectionExcludingQuit(char choice) {

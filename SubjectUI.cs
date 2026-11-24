@@ -29,8 +29,8 @@ public class SubjectUI : UI {
         Console.WriteLine("S - Select a subject (enter subject code)");
     }
 
-    protected override string ValidSelectionsExcludingQuit() {
-        return "S";
+    protected override List<char> ValidSelectionsExcludingQuit() {
+        return new List<char> { 'S' };
     }
 
     protected override bool HandleValidSelectionExcludingQuit(char choice) {

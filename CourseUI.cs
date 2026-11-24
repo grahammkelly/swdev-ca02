@@ -77,8 +77,8 @@ public class CourseUI : UI {
         Console.WriteLine("S - Select a course (enter course code)");
     }
 
-    protected override string ValidSelectionsExcludingQuit() {
-        return "S"; // Add valid selections for the course menu
+    protected override List<char> ValidSelectionsExcludingQuit() {
+        return new List<char> { 'S' }; // Add valid selections for the course menu
     }
 
     protected override bool HandleValidSelectionExcludingQuit(char choice) {
@@ -151,8 +151,8 @@ public class CourseDetailsUI : UI {
         Console.WriteLine("R - Remove this course");
     }
 
-    protected override string ValidSelectionsExcludingQuit() {
-        return "ER";
+    protected override List<char> ValidSelectionsExcludingQuit() {
+        return new List<char> { 'E', 'R' };
     }
 
     protected override bool HandleValidSelectionExcludingQuit(char choice) {
