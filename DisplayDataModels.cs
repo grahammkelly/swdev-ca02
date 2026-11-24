@@ -73,7 +73,6 @@ public class DataStore : ChangeNotificationReceiver {
     foreach (Subject s in _db.GetSubjects()) {
       _subjects[s.Code] = s;
     }
-    Logger.Debug($"Loaded subjects: {_subjects.Count} subjects from the database");
   }
 
   private void LoadCourseData() {
@@ -81,7 +80,6 @@ public class DataStore : ChangeNotificationReceiver {
     foreach (CourseDAO c in _db.GetCourses()) {
       _courses[c.Code] = _courseConverter.CreateCourseFromDAO(c);
     }
-    Logger.Debug($"Loaded {_courses.Count} courses from the database");
   }
 
   public Course? GetCourse(string courseCode) {
@@ -89,7 +87,7 @@ public class DataStore : ChangeNotificationReceiver {
   }
 
   public Course AddUpdateCourse(Course course) {
-    Logger.Info($"Adding course {course.Code}");
+    Logger.Info($"Adding/updating course {course.Code}");
     _db.AddUpdateCourse(_courseConverter.CreateCourseDAOFromCourse(course));
     _courses[course.Code] = course;
     return course;
@@ -108,7 +106,7 @@ public class DataStore : ChangeNotificationReceiver {
   }
 
   public Subject AddUpdateSubject(Subject subject) {
-    Logger.Debug($"Adding subject {subject.Code}");
+    Logger.Debug($"Adding/updating subject {subject.Code}");
     _subjects[subject.Code] = subject;
     _db.AddUpdateSubject(subject);
     return subject;
@@ -183,7 +181,11 @@ public class Course {
     Description = description;
   }
 
-  public void AddSubjectByYear(long year, Subject s) {
+  public void AddSubjectByYear(long year, Subject? s) {
+    if (s == null) {  //Fast fail if null passed in!
+      return;
+    }
+
     if (!SubjectsByYear.ContainsKey(year)) {
       SubjectsByYear[year] = new List<Subject>();
     }
