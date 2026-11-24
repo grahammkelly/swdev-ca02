@@ -21,7 +21,6 @@ using LMS;
 // Definitely NOT production quality
 //
 
-
 namespace Logging;
 
 //Only allowing 4 levels of logs for the LMS application
@@ -35,10 +34,12 @@ public enum LogLevel {
 public abstract class Logger {
 
     private static Logger? instance;
+    private static LogLevel _minLogLevel = LogLevel.Debug;
 
-    public static void InitializeLogger(string logTo = "CONSOLE") {        
+    public static void InitializeLogger(string logTo = "CONSOLE", LogLevel minLevel = LogLevel.Debug) {        
+        _minLogLevel = minLevel;
         if (instance != null) {
-            instance.WriteLogEvent(LogLevel.Warning, $"Logger has already been initialized to {instance.GetType()}");
+            Logger.Warning($"Logger has already been initialized to {instance.GetType()}");
         }
 
         switch (logTo.ToUpper()) {
@@ -55,17 +56,21 @@ public abstract class Logger {
                 instance = new FileLogger(logTo);
                 break;
         }
-        instance.WriteLogEvent(LogLevel.Info, $"[{instance}] initialized");
+        Logger.Debug($"[{instance}] initialized");
     }
 
     public static void Log(LogLevel level, string message) {
         GetLogger().WriteLogEvent(level, message);
     }
 
+    public static void LogWithBlanks(LogLevel level, string message, int initialLineCount = 1) {
+        GetLogger().WriteLogEvent(level, message, initialLineCount);
+    }
+
     public static Logger GetLogger() {
         if (instance == null) {
             instance = new ConsoleLogger();
-            instance.WriteLogEvent(LogLevel.Info, $"Logger was not initialized. Defaulting to [{instance}]");
+            Logger.Info($"Logger was not initialized. Defaulting to [{instance}]");
         }
         return instance;
     }
@@ -74,7 +79,19 @@ public abstract class Logger {
 
     protected abstract void AppendLogEvent(string message);
     
+    private void WriteLogEvent(LogLevel level, string message, int initialLineCount) {
+        if (level < _minLogLevel) {
+            return;
+        }
+        string timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.ffffZ");
+        AppendLogEvent($"{new String('\n', initialLineCount)}[{timestamp}]: [{level.ToString().ToUpper()}] - {message}");
+    }
+
+    //Explicitly duplicated method so we don't create the new string each time if we don't want the newlines beforehand
     private void WriteLogEvent(LogLevel level, string message) {
+        if (level < _minLogLevel) {
+            return;
+        }
         string timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.ffffZ");
         AppendLogEvent($"[{timestamp}]: [{level.ToString().ToUpper()}] - {message}");
     }
