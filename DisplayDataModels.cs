@@ -170,6 +170,8 @@ public class Course {
   public string Description { get; set; }
   public Dictionary<long, List<Subject>> SubjectsByYear = new Dictionary<long, List<Subject>>();
 
+  public static Course EmptyCourse() => new Course("", "", "");
+
   public Course(string title, string code, string description, Dictionary<long, List<Subject>> subjectsByYear) : 
         this(title, code, description){
     SubjectsByYear = subjectsByYear;
@@ -201,7 +203,7 @@ public class Course {
     }
     Subject? s = SubjectsByYear[year].First(sub => sub.Code == subjectCode);
     if (s == null) {
-      throw new NotFoundException($"Course {Code}: Subject {subjectCode} is not studed in year {year}");
+      throw new NotFoundException($"Course {Code}: Subject {subjectCode} is not studied in year {year}");
     }
     //OK, the year exists, and the subject is one for that year. Remove it
     SubjectsByYear[year].Remove(s);
@@ -217,7 +219,11 @@ public class Course {
   }
 
   public override string ToString() {
-    return $"Course: {Code} - {Title}, Description: {Description}, Subjects By Year: [\n\t{string.Join("\n\t", SubjectsByYear.Select(kv => $"{kv.Key}: [{string.Join(", ", kv.Value)}]"))}\n]";
+    string courseStr = $"{Code} - {Title}, Description: {Description}, Subjects By Year: [";
+    if (SubjectsByYear.Count > 0) {
+      courseStr += $"\n\t{string.Join(", ", SubjectsByYear.Select(kv => $"{kv.Key}: [{string.Join(", ", kv.Value)}]"))}\n";
+    }
+    return $"{courseStr}]";
   }
 }
 
