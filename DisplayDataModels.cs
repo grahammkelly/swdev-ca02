@@ -14,6 +14,7 @@
 // along with this program.  If not, see <https://gnu.org>.
 
 using LMS.Data;
+using Logging;
 
 namespace LMS.DisplayDataModels;
 
@@ -33,7 +34,10 @@ public class DataStore : ChangeNotificationReceiver {
   private readonly Database _db;
 
   private Dictionary<string, Course> _courses = new Dictionary<string, Course>();
+  public Dictionary<string, Course> Courses { get => _courses; } //Unable to make the returned Dictionary Immutable!!!!
+
   private Dictionary<string, Subject> _subjects = new Dictionary<string, Subject>();
+  public Dictionary<string, Subject> Subjects { get => _subjects; } //Same!!!
 
   private CourseConverter _courseConverter;
 
@@ -47,12 +51,19 @@ public class DataStore : ChangeNotificationReceiver {
     _db.RegisterForNotifications(this);
   }
 
+  public void Save() {
+    Logger.Debug($"Datastore Saving - \n Courses: ${_courses}\nSubjects: {_subjects}");
+    _db.Save();
+  }
+
   public void CoursesChanged() {
+    Logger.Debug("Courses changed notification received.");
     //Just reload all courses. Crude but effective
     LoadCourseData();
   }
 
   public void SubjectsChanged() {
+    Logger.Debug("Subjects changed notification received.");
     //Just reload all Subjects. Again, crude but effective
     LoadSubjectData();
   }
@@ -76,15 +87,17 @@ public class DataStore : ChangeNotificationReceiver {
   }
 
   public Course AddUpdateCourse(Course course) {
-    _courses[course.Code] = course;
+    Logger.Info($"Adding/updating course {course.Code}");
     _db.AddUpdateCourse(_courseConverter.CreateCourseDAOFromCourse(course));
+    _courses[course.Code] = course;
     return course;
   }
 
   public void RemoveCourse(string courseCode) {
+    Logger.Debug($"Remove request for Course {courseCode}");
     if (_courses.ContainsKey(courseCode)) {
       _db.RemoveCourse(courseCode);
-      _courses.Remove(courseCode);
+      Logger.Info($"Course {courseCode} removed from DB and local cache.");
     }
   }
 
@@ -93,15 +106,17 @@ public class DataStore : ChangeNotificationReceiver {
   }
 
   public Subject AddUpdateSubject(Subject subject) {
+    Logger.Debug($"Adding/updating subject {subject.Code}");
     _subjects[subject.Code] = subject;
     _db.AddUpdateSubject(subject);
     return subject;
   }
 
   public void RemoveSubject(string subjectCode) {
+    Logger.Debug($"Remove request for Subject {subjectCode}");
     if (_subjects.ContainsKey(subjectCode)) {
       _db.RemoveSubject(subjectCode);
-      _subjects.Remove(subjectCode);
+      Logger.Info($"Subject {subjectCode} removed from DB and local cache.");
     }
   }
 }
@@ -126,10 +141,9 @@ public class CourseConverter {
   }
 
   public CourseDAO CreateCourseDAOFromCourse(Course course) {
-    CourseDAO dao = new CourseDAO(course.Title, course.Code, course.Description);
-    Dictionary<long, List<string>> subjectCodesByYear = new Dictionary<long, List<string>>();
+    CourseDAO dao = new CourseDAO(course.Title, course.Description, course.Code);
     foreach (long yr in course.SubjectsByYear.Keys) {
-      subjectCodesByYear[yr] = course.SubjectsByYear[yr].Select(s => s.Code).ToList();
+      course.SubjectsByYear[yr].ForEach(s => dao.AddSubjectCodeByYear(yr, s.Code));
     }
     return dao;
   }
@@ -156,11 +170,48 @@ public class Course {
   public string Description { get; set; }
   public Dictionary<long, List<Subject>> SubjectsByYear = new Dictionary<long, List<Subject>>();
 
-  public Course(string title, string code, string description, Dictionary<long, List<Subject>> subjectsByYear) {
+  public static Course EmptyCourse() => new Course("", "", "");
+
+  public Course(string title, string code, string description, Dictionary<long, List<Subject>> subjectsByYear) : 
+        this(title, code, description){
+    SubjectsByYear = subjectsByYear;
+  }
+
+  public Course(string title, string code, string description) {
     Title = title;
     Code = code;
     Description = description;
-    SubjectsByYear = subjectsByYear;
+  }
+
+  public void AddSubjectByYear(long year, Subject? s) {
+    if (s == null) {  //Fast fail if null passed in!
+      return;
+    }
+
+    if (!SubjectsByYear.ContainsKey(year)) {
+      SubjectsByYear[year] = new List<Subject>();
+    }
+    SubjectsByYear[year].Add(s);
+  }
+
+  public void RemoveSubjectFromYear(long year, string subjectCode) {
+    Logger.Info($"Attempting to remove subject {subjectCode} from course {Code} for year {year}: Subject years [{String.Join(", ", SubjectsByYear.Keys)}]. Year {year}: {(SubjectsByYear.ContainsKey(year) ? string.Join(", ", SubjectsByYear[year].Select(s=> s.Code)) : "-None-")}");
+
+    //Check the course has the year, AND that the subject code is a subject for the specific year
+    if (! SubjectsByYear.ContainsKey(year)) {
+      throw new NotFoundException($"Course {Code}: No subjects foryear {year}");
+    }
+    Subject? s = SubjectsByYear[year].First(sub => sub.Code == subjectCode);
+    if (s == null) {
+      throw new NotFoundException($"Course {Code}: Subject {subjectCode} is not studied in year {year}");
+    }
+    //OK, the year exists, and the subject is one for that year. Remove it
+    SubjectsByYear[year].Remove(s);
+
+    //Now check if the subject list for that year is empty and remove the year if so.
+    if (SubjectsByYear[year].Count == 0) {
+      SubjectsByYear.Remove(year);
+    }
   }
 
   public List<Subject> GetSubjectsForYear(long year) {
@@ -168,7 +219,11 @@ public class Course {
   }
 
   public override string ToString() {
-    return $"Course: {Code} - {Title}, Description: {Description}, Subjects By Year: [\n\t{string.Join("\n\t", SubjectsByYear.Select(kv => $"{kv.Key}: [{string.Join(", ", kv.Value)}]"))}\n]";
+    string courseStr = $"{Code} - {Title}, Description: {Description}, Subjects By Year: [";
+    if (SubjectsByYear.Count > 0) {
+      courseStr += $"\n\t{string.Join(", ", SubjectsByYear.Select(kv => $"{kv.Key}: [{string.Join(", ", kv.Value)}]"))}\n";
+    }
+    return $"{courseStr}]";
   }
 }
 
@@ -238,5 +293,22 @@ public class DisplayDataModelTester : Tester {
     testDB.RemoveSubject("CAS3");
     RunTest(testDB.GetSubjectByCode("CAS3") == null, "Test Database should not have subject \"CAS3\" after removal");
     RunTest(testDatastore.GetSubject("CAS3") == null, "\"CAS3\" should have been removed from the Datastore when deleted from the test DB");
+
+    //Tests for the CourseConverter
+    CourseConverter cut = new CourseConverter(testDatastore.Subjects); //'cut' -> Class under test!.CreateCourseFromDAO(courseForConversion);
+    CourseDAO courseForConversion = new CourseDAO("Course for Conversion", "Description for Course for Conversion", "CONV");
+    courseForConversion.AddSubjectCodeByYear(1, cas1.Code);
+    RunTest(courseForConversion.GetSubjectCodesForYear(1).Contains(cas1.Code), 
+        "CourseDAO, for Conversion, should have CAS1 in Year 1");
+    Course converted = cut.CreateCourseFromDAO(courseForConversion);
+    List<Subject> subjects = converted.GetSubjectsForYear(1);
+    RunTest(subjects.Count == 1, "Converted course should have 1 subject in Year 1");
+    RunTest(subjects[0].Code == cas1.Code, "First subject in Year 1 of converted course should be CAS1");
+    RunTest(subjects[0] == cas1, "First subject in Year 1 of converted course should be the CAS1 object");
+
+    CourseDAO reconverted  = cut.CreateCourseDAOFromCourse(converted);
+    List<string> subjectCodes = reconverted.GetSubjectCodesForYear(1);
+    RunTest(subjectCodes.Count == 1, "Reconverted CourseDAO should have 1 subject code in Year 1");
+    RunTest(subjectCodes[0] == cas1.Code, "First subject code in Year 1 of reconverted CourseDAO should be CAS1");
   }
 }

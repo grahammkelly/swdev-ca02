@@ -111,28 +111,26 @@ namespace LMS.Data
     //
      internal class FileBackedInMemoryDatabase : Database {
         //According to Docs I can find, '/' should work for relative paths on BOTH Windows and Unix!
-        public const string COURSE_FILE = "./courses";  //Public to allow testing
-        public const string SUBJECT_FILE = "./subjects";  //Public to allow testing
-
         protected readonly Dictionary<string, CourseDAO> _courses = new Dictionary<string, CourseDAO>();
         protected readonly Dictionary<string, Subject> _subjects = new Dictionary<string, Subject>();
         
-        internal protected FileBackedInMemoryDatabase() {            
-            LoadDataFromFile(COURSE_FILE, SUBJECT_FILE);
+        internal protected FileBackedInMemoryDatabase() {   
+            DataHandlerHelpers.DoNotProvideBackups();         
+            LoadDataFromFile();
         }
 
-        private void LoadDataFromFile(string courseDataFile, string subjectsDataFile) {
-            SubjectDataHandler.LoadSubjectsFromFile(subjectsDataFile)
-                    .ForEach(subject => _subjects[subject.Code] = subject);
-            CourseDataHandler.LoadCoursesFromFile(courseDataFile)
-                    .ForEach(course => _courses[course.Code] = course);
+        private void LoadDataFromFile() {
+            Logger.Debug("Loading data from filesystem");
+            
+            SubjectDataHandler.LoadSubjectsFromFile().ForEach(subject => _subjects[subject.Code] = subject);
+            CourseDataHandler.LoadCoursesFromFile().ForEach(course => _courses[course.Code] = course);
         }
 
 
         public override void Save() {
-            Logger.Info("Saving to filesystem");
-            CourseDataHandler.SaveCoursesToFile(COURSE_FILE, _courses.Values.ToList());
-            SubjectDataHandler.SaveSubjectsToFile(SUBJECT_FILE, _subjects.Values.ToList());
+            Logger.Debug("Saving to filesystem");
+            int coursesSaved = CourseDataHandler.SaveCoursesToFile(_courses.Values.ToList());
+            int subjectsSaved = SubjectDataHandler.SaveSubjectsToFile(_subjects.Values.ToList());
         }
 
         protected override void RemoveAllDataInternal() {
@@ -174,35 +172,52 @@ namespace LMS.Data
 
 
         protected static class DataHandlerHelpers {
-            public static void SaveToFile(string dataFilePathAndPrefix, List<string> lines) {
-                string targetFileName = dataFilePathAndPrefix + ".dat";
-                BackupIfExists(dataFilePathAndPrefix);
+            private static bool _provideBackups = true;
+
+            public static void DoNotProvideBackups() {
+                _provideBackups = false;
+            }
+
+            public static string GetTargetFile(string dataFilePathAndPrefix) =>
+                dataFilePathAndPrefix + ".dat";
+            
+            public static int SaveToFile(string dataFilePathAndPrefix, string dataType, List<string> lines) {
+                string targetFileName = GetTargetFile(dataFilePathAndPrefix);
+                if (_provideBackups) {
+                    BackupIfExists(dataFilePathAndPrefix);
+                }
                 File.WriteAllLines(targetFileName, lines);
+                Logger.Info($"Stored {lines.Count} {dataType} to file: {targetFileName}");
+                return lines.Count;
             }
 
             private static void BackupIfExists(string dataFilePathAndPrefix) {
-                string targetFileName = dataFilePathAndPrefix + ".dat";
+                string targetFileName = GetTargetFile(dataFilePathAndPrefix);
                 string backupFileName = $"{dataFilePathAndPrefix}_{DateTime.UtcNow:yyyyMMddTHHmmss.ffff}.bkp";
                 if (File.Exists(targetFileName)) {
                     File.Move(targetFileName, backupFileName);
+                    Logger.Info($"Backed up existing `{targetFileName}` to `{backupFileName}`");
                 }
             }
         }
 
-        private static class SubjectDataHandler {
+        public static class SubjectDataHandler {
+            public const string SUBJECT_FILE = "./subjects";  //Public to allow testing
+            public static string GetSubjectFile() => DataHandlerHelpers.GetTargetFile(SUBJECT_FILE);
+            
             // Line format on the file will be 'Type: {fields in JSON format}'
             // So For example, a 'TestedSubject' will be 'TestedSubject: {"Title":"Law","Credits":5,"Description":"...","Lecturer":"...","Code":"LAW101","ExamDuration":120}'
             // ...and a 'ContinuousAssessmentSubject' will be 'ContinuousAssessmentSubject: {"Title":"Programming","Credits":5,"Description":"...","Lecturer":"...","Code":"PROG101","Assignments":[{"Title":"Assignment 1","Weight":50,"Description":"..."},{"Title":"Assignment 2","Weight":50,"Description":"..."}]}'
 
 
-            public static void SaveSubjectsToFile(string dataFile, List<Subject> subjects) {
+            public static int SaveSubjectsToFile(List<Subject> subjects) {
                 //Prepare a list of lines to write out
                 List<string> lines = ConvertSubjectsToWritabelLines(subjects);
-                
+
                 Logger.Debug($"Saving Subjects:");
                 lines.ForEach(l => Logger.Debug($"\t{l}"));
 
-                DataHandlerHelpers.SaveToFile(dataFile, lines);
+                return DataHandlerHelpers.SaveToFile(SUBJECT_FILE, "subjects", lines);
             }
 
             private static List<string> ConvertSubjectsToWritabelLines(List<Subject> subjects) {
@@ -217,16 +232,19 @@ namespace LMS.Data
                 return lines;
             }
 
-            public static List<Subject> LoadSubjectsFromFile(string dataFile) {
+            public static List<Subject> LoadSubjectsFromFile() {
                 List<Subject> subjects = new List<Subject>();
-                if (File.Exists(dataFile)) {
+                if (File.Exists(GetSubjectFile())) {
                     // Load the subjects from the file
-                    List<string> lines = File.ReadAllLines(dataFile).ToList();
+                    List<string> lines = File.ReadAllLines(GetSubjectFile()).ToList();
                     lines.ForEach(line => {
-                        subjects.Add(ExtractSubjectFromLine(line));
+                        Subject s = ExtractSubjectFromLine(line);   //Interim variable purely so I can log it!
+                        subjects.Add(s);
+                        Logger.Debug($"Loaded {s.GetClassType()} {s.Code} to memory");
                     });
                     
                 }
+                Logger.Info($"Loaded {subjects.Count} subjects from `{GetSubjectFile()}` - {string.Join(", ", subjects.Select(s => s.Code)) }");
                 return subjects;
             }
 
@@ -259,25 +277,30 @@ namespace LMS.Data
             }
         }
 
-        private static class CourseDataHandler {
+        public static class CourseDataHandler {
+            public const string COURSE_FILE = "./courses";  //Public to allow testing
+
+            public static string GetCourseFile() => DataHandlerHelpers.GetTargetFile(COURSE_FILE);
+
             //Format of Courses on file will be in JSON format
             // So For example, a 'Course' will be '{"Title":"Computer Science","SubjectsByYear":{"1":{"Title":"Programming","Credits":5,"Description":"...","Lecturer":"...","Code":"PROG101","Assignments":[{"Title":"Assignment 1","Weight":50,"Description":"..."},{"Title":"Assignment 2","Weight":50,"Description":"..."}]}},"Description":"...","Code":"CS101"}'
 
-            public static void SaveCoursesToFile(string dataFile, List<CourseDAO> courses) {
+            public static int SaveCoursesToFile(List<CourseDAO> courses) {
                 //Prepare a list of the lines to write out
                 List<string> lines = courses.Select(course => System.Text.Json.JsonSerializer.Serialize(course)).ToList();
                 Logger.Debug($"Saving Courses:");
                 lines.ForEach(l => Logger.Debug($"\t{l}"));
 
-                DataHandlerHelpers.SaveToFile(dataFile, lines);
+                return DataHandlerHelpers.SaveToFile(COURSE_FILE, "courses", lines);
             }
 
-            public static List<CourseDAO> LoadCoursesFromFile(string dataFile) {
+            public static List<CourseDAO> LoadCoursesFromFile() {
                 List<CourseDAO> courses = new List<CourseDAO>();
-                if (File.Exists(dataFile)) {
-                    List<string> lines = File.ReadAllLines(dataFile + ".dat").ToList();
+                if (File.Exists(GetCourseFile())) {
+                    List<string> lines = File.ReadAllLines(GetCourseFile()).ToList();
                     courses = CreateCourseDAOForEachLine(lines);
                 }
+                Logger.Info($"Loaded {courses.Count} courses from `{GetCourseFile()}` - {string.Join(", ", courses.Select(c => c.Code)) }");
                 return courses;
             }
 
@@ -350,8 +373,8 @@ namespace LMS.Data
 
         private Database GetDatabase() {
             //Start from a clean slate!
-            EnsureFileDoesNotExist(FileBackedInMemoryDatabase.COURSE_FILE);
-            EnsureFileDoesNotExist(FileBackedInMemoryDatabase.SUBJECT_FILE);
+            EnsureFileDoesNotExist(FileBackedInMemoryDatabase.CourseDataHandler.GetCourseFile());
+            EnsureFileDoesNotExist(FileBackedInMemoryDatabase.SubjectDataHandler.GetSubjectFile());
 
             //Test the Database classes
             return DatabaseFactory.GetDatabase();
@@ -464,10 +487,11 @@ namespace LMS.Data
                     "Subject notification should not have been received for the course update");
 
             db.Save();
-            RunTest(File.Exists(FileBackedInMemoryDatabase.COURSE_FILE), 
-                $"Database was saved, {FileBackedInMemoryDatabase.COURSE_FILE} should exist");
-            RunTest(File.Exists(FileBackedInMemoryDatabase.SUBJECT_FILE), 
-                $"Database was saved, {FileBackedInMemoryDatabase.SUBJECT_FILE} should exist");
+
+            string courseDataFile = FileBackedInMemoryDatabase.CourseDataHandler.GetCourseFile();
+            RunTest(File.Exists(courseDataFile), $"Database was saved, {courseDataFile} should exist");
+            string subjectDataFile = FileBackedInMemoryDatabase.SubjectDataHandler.GetSubjectFile();
+            RunTest(File.Exists(subjectDataFile), $"Database was saved, {subjectDataFile} should exist");
 
             Database testDB = DatabaseFactory.GetTestDatabaseInstance();
             List<CourseDAO> storedCourses = db.GetCourses();

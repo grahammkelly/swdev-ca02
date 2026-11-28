@@ -23,6 +23,7 @@ namespace LMS.Data {
 
     [Serializable]
     public class CourseDAO {
+        private string _code;
         public string Title { get; private set; }
         private Dictionary<long, List<string>> _subjectCodesByYear = new Dictionary<long, List<string>>();
 
@@ -31,7 +32,7 @@ namespace LMS.Data {
         }
     
         public string Description { get; private set; }
-        public string Code { get; private set; }
+        public string Code { get => _code; private set => _code = value.ToUpper(); }
 
         public CourseDAO(string title, string description, string code) {
             Title = title;
@@ -77,7 +78,8 @@ namespace LMS.Data {
         public long Credits { get; protected set; }
         public string Description { get; protected set; }
         public string Lecturer { get; protected set; }
-        public string Code { get; protected set; }
+        private string _code;
+        public string Code { get => _code; protected set => _code = value.ToUpper(); }
 
         public Subject(string title, long credits, string description, string lecturer, string code) {
             Title = title;
